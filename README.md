@@ -75,10 +75,9 @@ modules used by `gui_duplicator.py`.
 1. Click **Browse** and choose the folder you want to scan.
 2. Click **Scan for Duplicates**.
 3. Review the duplicate groups in the left panel.
-4. Select a file to view its details and image preview.
-5. Select a file marked **[DUPLICATE]**.
-6. Click **Send Selected Duplicate to Recycle Bin**.
-7. Confirm the deletion when prompted.
+4. Select one or more files to view their details and image preview.
+5. Click the checkbox in the **Delete** column for each duplicate you want to remove.
+6. Click **Delete Checked Duplicates** and confirm the deletion.
 
 The first file in each duplicate group is marked **[KEEP ORIGINAL]**. Review
 each group before removing a file.
@@ -86,6 +85,16 @@ each group before removing a file.
 Use **Delete All Duplicates** to send every file marked **[DUPLICATE]** to the
 Windows Recycle Bin after one confirmation. Original files are never included
 in this action.
+
+Double-click a file to open it. Right-click a file for these options:
+
+- **Open File**
+- **Open Folder Containing File**
+- **Mark as duplicate** or **Unmark as duplicate**
+
+Files marked as duplicates are shown in a different color. Marking a file as a
+duplicate makes it eligible for the delete checkboxes; unmarking it makes it
+the original for that group.
 
 The application detects your Windows app theme when it starts. Use
 **Switch to Dark Mode** or **Switch to Light Mode** to change the theme while

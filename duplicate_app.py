@@ -1,7 +1,9 @@
+import os
 from pathlib import Path
 import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from typing import Optional
 
 from PIL import Image, ImageTk
 
@@ -22,6 +24,7 @@ class DuplicateApp:
         self.scanner = DuplicateScanner()
         self.file_manager = DuplicateFileManager()
         self.duplicate_data: dict[str, DuplicateGroup] = {}
+        self.checked_paths: set[Path] = set()
         self.current_preview_image = None
         self.is_dark_mode = self.detect_system_dark_mode()
 
@@ -55,7 +58,6 @@ class DuplicateApp:
                 "field": "#303134",
                 "selected": "#3c5a78",
                 "canvas": "#303134",
-                "muted": "#b8c0c8",
             }
         else:
             colors = {
@@ -64,12 +66,13 @@ class DuplicateApp:
                 "field": "#ffffff",
                 "selected": "#cfe2f3",
                 "canvas": "#f0f0f0",
-                "muted": "#666666",
             }
 
         self.root.configure(bg=colors["background"])
         self.preview_canvas.configure(bg=colors["canvas"])
-        self.style.configure(".", background=colors["background"], foreground=colors["foreground"])
+        self.style.configure(
+            ".", background=colors["background"], foreground=colors["foreground"]
+        )
         self.style.configure(
             "TEntry",
             fieldbackground=colors["field"],
@@ -97,6 +100,11 @@ class DuplicateApp:
             background=[("active", colors["selected"])],
             foreground=[("active", colors["foreground"])],
         )
+        self.tree.tag_configure("original", foreground=colors["foreground"])
+        self.tree.tag_configure(
+            "duplicate",
+            foreground="#ff6b6b" if self.is_dark_mode else "#c62828",
+        )
         self.theme_btn.config(
             text="Switch to Light Mode" if self.is_dark_mode else "Switch to Dark Mode"
         )
@@ -110,14 +118,17 @@ class DuplicateApp:
         )
         self.path_entry = ttk.Entry(top_frame, width=65)
         self.path_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(top_frame, text="Browse", command=self.browse_folder).pack(
-            side=tk.LEFT, padx=5
-        )
-        ttk.Button(top_frame, text="Scan for Duplicates", command=self.run_scan).pack(
-            side=tk.LEFT, padx=5
-        )
+        ttk.Button(
+            top_frame, text="Browse", command=self.browse_folder, cursor="hand2"
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            top_frame,
+            text="Scan for Duplicates",
+            command=self.run_scan,
+            cursor="hand2",
+        ).pack(side=tk.LEFT, padx=5)
         self.theme_btn = ttk.Button(
-            top_frame, text="Switch Theme", command=self.toggle_theme
+            top_frame, text="Switch Theme", command=self.toggle_theme, cursor="hand2"
         )
         self.theme_btn.pack(side=tk.LEFT, padx=5)
 
@@ -126,12 +137,26 @@ class DuplicateApp:
 
         left_frame = ttk.Frame(main_pane)
         main_pane.add(left_frame, weight=3)
-        self.tree = ttk.Treeview(left_frame, selectmode="browse")
+        self.tree = ttk.Treeview(
+            left_frame,
+            columns=("checked", "path", "file_type"),
+            selectmode="extended",
+        )
         self.tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
         self.tree.heading(
             "#0", text="Duplicates Tree (Format, Size, Dimensions matched)", anchor=tk.W
         )
+        self.tree.heading("checked", text="Delete", anchor=tk.CENTER)
+        self.tree.heading("path", text="Path", anchor=tk.W)
+        self.tree.heading("file_type", text="Status", anchor=tk.W)
+        self.tree.column("checked", width=55, minwidth=55, stretch=False, anchor=tk.CENTER)
+        self.tree.column("path", width=0, minwidth=0, stretch=False)
+        self.tree.column("file_type", width=95, minwidth=95, stretch=False)
         self.tree.bind("<<TreeviewSelect>>", self.on_select_item)
+        self.tree.bind("<Button-1>", self.on_tree_click)
+        self.tree.bind("<Double-1>", self.open_selected_file)
+        self.tree.bind("<Button-3>", self.show_context_menu)
+
         tree_scroll = ttk.Scrollbar(left_frame, orient=tk.VERTICAL, command=self.tree.yview)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.configure(yscrollcommand=tree_scroll.set)
@@ -155,9 +180,10 @@ class DuplicateApp:
         bottom_frame.pack(fill=tk.X, side=tk.BOTTOM)
         self.delete_btn = ttk.Button(
             bottom_frame,
-            text="Send Selected Duplicate to Recycle Bin",
-            command=self.delete_selected,
+            text="Delete Checked Duplicates",
+            command=self.delete_checked_duplicates,
             state=tk.DISABLED,
+            cursor="hand2",
         )
         self.delete_btn.pack(side=tk.RIGHT, padx=5)
         self.delete_all_btn = ttk.Button(
@@ -165,6 +191,7 @@ class DuplicateApp:
             text="Delete All Duplicates",
             command=self.delete_all_duplicates,
             state=tk.DISABLED,
+            cursor="hand2",
         )
         self.delete_all_btn.pack(side=tk.RIGHT, padx=5)
 
@@ -185,14 +212,15 @@ class DuplicateApp:
             return
 
         self.clear_tree()
+        self.checked_paths.clear()
         self.duplicate_data = self.scanner.scan_directory(target_dir)
         if not self.duplicate_data:
-            self.delete_all_btn.config(state=tk.DISABLED)
+            self.update_delete_buttons()
             messagebox.showinfo("Result", "No duplicate files found matching your criteria!")
             return
 
         self.populate_tree()
-        self.delete_all_btn.config(state=tk.NORMAL)
+        self.update_delete_buttons()
         messagebox.showinfo(
             "Scan Complete", f"Found {len(self.duplicate_data)} duplicate groups!"
         )
@@ -208,29 +236,54 @@ class DuplicateApp:
                 parent_node,
                 tk.END,
                 text=f"[KEEP ORIGINAL] {group.original.name}",
-                values=(str(group.original), "original"),
+                values=(self.checkbox_text(group.original), str(group.original), "original"),
+                tags=("original",),
             )
             for duplicate in group.duplicates:
                 self.tree.insert(
                     parent_node,
                     tk.END,
                     text=f"[DUPLICATE] {duplicate.name}",
-                    values=(str(duplicate), "duplicate"),
+                    values=(self.checkbox_text(duplicate), str(duplicate), "duplicate"),
+                    tags=("duplicate",),
                 )
 
     def clear_tree(self) -> None:
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+    def checkbox_text(self, path: Path) -> str:
+        return "[x]" if path in self.checked_paths else "[ ]"
+
+    def on_tree_click(self, event) -> Optional[str]:
+        item = self.tree.identify_row(event.y)
+        if item and self.tree.identify_column(event.x) == "#1":
+            self.toggle_checked(item)
+            return "break"
+        return None
+
+    def toggle_checked(self, item: str) -> None:
+        values = self.tree.item(item, "values")
+        if not values:
+            return
+        path = Path(values[1])
+        if path in self.checked_paths:
+            self.checked_paths.remove(path)
+        else:
+            self.checked_paths.add(path)
+        self.tree.set(item, "checked", self.checkbox_text(path))
+        self.update_delete_buttons()
+
     def on_select_item(self, _event) -> None:
         selected_items = self.tree.selection()
-        if not selected_items:
-            return
-
-        values = self.tree.item(selected_items[0], "values")
-        if values:
-            self.load_file_details(values[0], values[1])
-        else:
+        file_items = [
+            item for item in selected_items if self.tree.item(item, "values")
+        ]
+        if len(file_items) == 1:
+            values = self.tree.item(file_items[0], "values")
+            self.load_file_details(values[1], values[2])
+        elif len(file_items) > 1:
+            self.details_label.config(text=f"{len(file_items)} files selected.")
             self.delete_btn.config(state=tk.DISABLED)
 
     def load_file_details(self, file_path: str, file_type: str) -> None:
@@ -247,10 +300,6 @@ class DuplicateApp:
                 f"Size: {size:,} bytes\nDimensions: {dimensions or 'N/A'}"
             )
         )
-        self.delete_btn.config(
-            state=tk.NORMAL if file_type == "duplicate" else tk.DISABLED
-        )
-
         self.preview_canvas.delete("all")
         if path_obj.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"}:
             self.preview_canvas.create_text(
@@ -269,35 +318,36 @@ class DuplicateApp:
                 160, 160, text="Could not load preview", fill="red"
             )
 
-    def delete_selected(self) -> None:
-        selected_items = self.tree.selection()
-        if not selected_items:
-            return
+    def get_checked_duplicate_paths(self) -> list[Path]:
+        return [
+            path
+            for item in self.walk_file_items()
+            for values in [self.tree.item(item, "values")]
+            if values and values[2] == "duplicate"
+            for path in [Path(values[1])]
+            if path in self.checked_paths
+        ]
 
-        item = selected_items[0]
-        values = self.tree.item(item, "values")
-        if not values or values[1] != "duplicate":
-            return
+    def walk_file_items(self) -> list[str]:
+        return [
+            child
+            for parent in self.tree.get_children()
+            for child in self.tree.get_children(parent)
+        ]
 
-        file_path = values[0]
-        if not messagebox.askyesno(
+    def delete_checked_duplicates(self) -> None:
+        duplicate_paths = self.get_checked_duplicate_paths()
+        if not duplicate_paths:
+            messagebox.showinfo(
+                "No Files Selected",
+                "Check at least one duplicate file before deleting.",
+            )
+            return
+        if messagebox.askyesno(
             "Confirm Deletion",
-            f"Are you sure you want to send this duplicate to the Recycle Bin?\n\n"
-            f"{Path(file_path).name}",
+            f"Send {len(duplicate_paths)} checked duplicate file(s) to the Recycle Bin?",
         ):
-            return
-        try:
-            self.file_manager.move_to_recycle_bin(file_path)
-        except OSError as error:
-            messagebox.showerror("Error", f"Failed to delete file: {error}")
-            return
-
-        messagebox.showinfo("Success", "File safely moved to the Windows Recycle Bin.")
-        self.remove_duplicate_from_data(Path(file_path))
-        self.refresh_tree()
-        self.delete_btn.config(state=tk.DISABLED)
-        self.details_label.config(text="Select a file to view details.")
-        self.reset_preview()
+            self.delete_paths(duplicate_paths)
 
     def delete_all_duplicates(self) -> None:
         duplicate_paths = [
@@ -306,18 +356,18 @@ class DuplicateApp:
             for duplicate in group.duplicates
         ]
         if not duplicate_paths:
-            self.delete_all_btn.config(state=tk.DISABLED)
+            self.update_delete_buttons()
             return
-
-        if not messagebox.askyesno(
+        if messagebox.askyesno(
             "Confirm Deletion",
             f"Send all {len(duplicate_paths)} duplicate files to the Recycle Bin?",
         ):
-            return
+            self.delete_paths(duplicate_paths)
 
+    def delete_paths(self, paths: list[Path]) -> None:
         deleted_paths = []
         failed_paths = []
-        for path in duplicate_paths:
+        for path in paths:
             try:
                 self.file_manager.move_to_recycle_bin(str(path))
                 deleted_paths.append(path)
@@ -325,9 +375,9 @@ class DuplicateApp:
                 failed_paths.append(path)
 
         for path in deleted_paths:
-            self.remove_duplicate_from_data(path)
+            self.remove_file_from_data(path)
+            self.checked_paths.discard(path)
         self.refresh_tree()
-        self.delete_btn.config(state=tk.DISABLED)
         self.details_label.config(text="Select a file to view details.")
         self.reset_preview()
 
@@ -344,20 +394,97 @@ class DuplicateApp:
                 f"Moved {len(deleted_paths)} duplicate file(s) to the Recycle Bin.",
             )
 
-    def remove_duplicate_from_data(self, file_path: Path) -> None:
+    def remove_file_from_data(self, file_path: Path) -> None:
         for group_name, group in list(self.duplicate_data.items()):
-            group.duplicates = [
-                duplicate for duplicate in group.duplicates if duplicate != file_path
-            ]
-            if not group.duplicates:
-                del self.duplicate_data[group_name]
+            if group.original == file_path:
+                if group.duplicates:
+                    group.original = group.duplicates.pop(0)
+                else:
+                    del self.duplicate_data[group_name]
+                return
+            if file_path in group.duplicates:
+                group.duplicates.remove(file_path)
+                if not group.duplicates:
+                    del self.duplicate_data[group_name]
+                return
 
     def refresh_tree(self) -> None:
         self.clear_tree()
         self.populate_tree()
+        self.update_delete_buttons()
+
+    def update_delete_buttons(self) -> None:
         self.delete_all_btn.config(
             state=tk.NORMAL if self.duplicate_data else tk.DISABLED
         )
+        self.delete_btn.config(
+            state=tk.NORMAL if self.get_checked_duplicate_paths() else tk.DISABLED
+        )
+
+    def open_selected_file(self, event) -> None:
+        item = self.tree.identify_row(event.y)
+        values = self.tree.item(item, "values") if item else ()
+        if values:
+            self.open_path(Path(values[1]))
+
+    def open_path(self, path: Path) -> None:
+        if not path.is_file():
+            messagebox.showerror("Error", f"File does not exist:\n{path}")
+            return
+        try:
+            os.startfile(str(path))
+        except OSError as error:
+            messagebox.showerror("Error", f"Could not open file: {error}")
+
+    def open_containing_folder(self, path: Path) -> None:
+        try:
+            os.startfile(str(path.parent))
+        except OSError as error:
+            messagebox.showerror("Error", f"Could not open folder: {error}")
+
+    def show_context_menu(self, event) -> str:
+        item = self.tree.identify_row(event.y)
+        values = self.tree.item(item, "values") if item else ()
+        if not values:
+            return "break"
+
+        self.tree.selection_set(item)
+        file_path = Path(values[1])
+        menu = tk.Menu(self.root, tearoff=False)
+        menu.add_command(label="Open File", command=lambda: self.open_path(file_path))
+        menu.add_command(
+            label="Open Folder Containing File",
+            command=lambda: self.open_containing_folder(file_path),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Unmark as duplicate"
+            if values[2] == "duplicate"
+            else "Mark as duplicate",
+            command=lambda: self.toggle_duplicate_status(file_path),
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    def toggle_duplicate_status(self, path: Path) -> None:
+        for group in self.duplicate_data.values():
+            if group.original == path:
+                replacement = group.duplicates.pop(0)
+                group.duplicates.append(group.original)
+                group.original = replacement
+                self.checked_paths.discard(path)
+                self.refresh_tree()
+                return
+            if path in group.duplicates:
+                group.duplicates.remove(path)
+                group.duplicates.append(group.original)
+                group.original = path
+                self.checked_paths.discard(path)
+                self.refresh_tree()
+                return
 
     def reset_preview(self) -> None:
         self.preview_canvas.delete("all")
