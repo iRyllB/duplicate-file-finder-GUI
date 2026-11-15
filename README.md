@@ -74,7 +74,8 @@ modules used by `gui_duplicator.py`.
 
 1. Click **Browse** and choose the folder you want to scan.
 2. Click **Scan for Duplicates**.
-3. Use **Recheck Folder** after files are added, deleted, or changed.
+3. Use the refresh button next to the folder path after files are added,
+   deleted, or changed. Hover over it to see the **Recheck Folder** label.
 4. Review the duplicate groups in the left panel.
 5. Select one or more files to view their details and image preview.
 6. Click the checkbox in the **Delete** column for each duplicate you want to remove.

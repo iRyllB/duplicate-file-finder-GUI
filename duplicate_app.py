@@ -15,6 +15,44 @@ except ImportError:
     winreg = None
 
 
+class Tooltip:
+    def __init__(self, widget: tk.Widget, text: str, colors: dict[str, str]):
+        self.widget = widget
+        self.text = text
+        self.colors = colors
+        self.after_id = None
+        self.window = None
+
+    def schedule(self, x: int, y: int) -> None:
+        self.hide()
+        self.after_id = self.widget.after(
+            700, lambda: self.show(x + 12, y + 12)
+        )
+
+    def show(self, x: int, y: int) -> None:
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        self.window.wm_geometry(f"+{x}+{y}")
+        tk.Label(
+            self.window,
+            text=self.text,
+            background=self.colors.get("field", "#ffffff"),
+            foreground=self.colors.get("foreground", "#202124"),
+            relief=tk.SOLID,
+            borderwidth=1,
+            padx=4,
+            pady=2,
+        ).pack()
+
+    def hide(self) -> None:
+        if self.after_id is not None:
+            self.widget.after_cancel(self.after_id)
+            self.after_id = None
+        if self.window is not None:
+            self.window.destroy()
+            self.window = None
+
+
 class DuplicateApp:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -29,6 +67,8 @@ class DuplicateApp:
         self.is_dark_mode = self.detect_system_dark_mode()
         self.theme_colors = {}
         self.view_filter = "all"
+        self.recheck_tooltip = None
+        self.file_tooltip = None
         self.delete_all_var = tk.BooleanVar(value=False)
         self.show_original_var = tk.BooleanVar(value=False)
         self.show_duplicate_var = tk.BooleanVar(value=False)
@@ -79,7 +119,8 @@ class DuplicateApp:
                 "muted": "#666666",
             }
 
-        self.theme_colors = colors
+        self.theme_colors.clear()
+        self.theme_colors.update(colors)
         self.root.configure(bg=colors["background"])
         self.preview_canvas.configure(bg=colors["canvas"])
         self.style.configure(
@@ -195,19 +236,22 @@ class DuplicateApp:
         )
         self.path_entry = ttk.Entry(top_frame, width=65)
         self.path_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(
+        self.recheck_btn = ttk.Button(
+            top_frame,
+            text="↻",
+            command=self.recheck_folder,
+            cursor="hand2",
+            width=3,
+        )
+        self.recheck_btn.pack_forget()
+        self.browse_btn = ttk.Button(
             top_frame, text="Browse", command=self.browse_folder, cursor="hand2"
-        ).pack(side=tk.LEFT, padx=5)
+        )
+        self.browse_btn.pack(side=tk.LEFT, padx=5)
         ttk.Button(
             top_frame,
             text="Scan for Duplicates",
             command=self.run_scan,
-            cursor="hand2",
-        ).pack(side=tk.LEFT, padx=5)
-        ttk.Button(
-            top_frame,
-            text="Recheck Folder",
-            command=self.recheck_folder,
             cursor="hand2",
         ).pack(side=tk.LEFT, padx=5)
         self.theme_btn = ttk.Button(
@@ -240,6 +284,10 @@ class DuplicateApp:
         self.tree.bind("<Double-1>", self.open_selected_file)
         self.tree.bind("<Button-3>", self.show_context_menu)
         self.tree.bind("<Motion>", self.update_tree_cursor)
+        self.tree.bind("<Leave>", lambda _event: self.file_tooltip.hide())
+        self.file_tooltip = Tooltip(
+            self.tree, "Double click to open file", self.theme_colors
+        )
 
         tree_scroll = ttk.Scrollbar(left_frame, orient=tk.VERTICAL, command=self.tree.yview)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -259,6 +307,16 @@ class DuplicateApp:
         )
         self.preview_canvas.pack(pady=10)
         self.reset_preview()
+        self.recheck_tooltip = Tooltip(
+            self.recheck_btn, "Recheck Folder", self.theme_colors
+        )
+        self.recheck_btn.bind(
+            "<Enter>",
+            lambda event: self.recheck_tooltip.schedule(event.x_root, event.y_root),
+        )
+        self.recheck_btn.bind(
+            "<Leave>", lambda _event: self.recheck_tooltip.hide()
+        )
 
         bottom_frame = ttk.Frame(self.root, padding=10)
         bottom_frame.pack(fill=tk.X, side=tk.BOTTOM)
@@ -308,6 +366,7 @@ class DuplicateApp:
         if folder:
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, folder)
+            self.show_recheck_button()
 
     def run_scan(self) -> None:
         self.scan_folder("Scan Complete")
@@ -318,9 +377,11 @@ class DuplicateApp:
     def scan_folder(self, result_title: str) -> None:
         target_dir = self.path_entry.get().strip()
         if not target_dir or not Path(target_dir).is_dir():
+            self.hide_recheck_button()
             messagebox.showerror("Error", "Please select a valid directory first.")
             return
 
+        self.show_recheck_button()
         self.clear_tree()
         self.checked_paths.clear()
         self.duplicate_data = self.scanner.scan_directory(target_dir)
@@ -385,6 +446,10 @@ class DuplicateApp:
             and self.tree.identify_element(event.x, event.y) == "text"
         )
         self.tree.configure(cursor="hand2" if is_file_name else "")
+        if is_file_name:
+            self.file_tooltip.schedule(event.x_root, event.y_root)
+        else:
+            self.file_tooltip.hide()
 
     def toggle_checked(self, item: str) -> None:
         values = self.tree.item(item, "values")
@@ -581,6 +646,15 @@ class DuplicateApp:
             and self.tree.identify_element(event.x, event.y) == "text"
         ):
             self.open_path(Path(values[1]))
+
+    def show_recheck_button(self) -> None:
+        if not self.recheck_btn.winfo_ismapped():
+            self.recheck_btn.pack(side=tk.LEFT, padx=2, before=self.browse_btn)
+
+    def hide_recheck_button(self) -> None:
+        self.recheck_btn.pack_forget()
+        if self.recheck_tooltip is not None:
+            self.recheck_tooltip.hide()
 
     def open_path(self, path: Path) -> None:
         if not path.is_file():
