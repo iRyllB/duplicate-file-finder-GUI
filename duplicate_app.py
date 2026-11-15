@@ -27,6 +27,10 @@ class DuplicateApp:
         self.checked_paths: set[Path] = set()
         self.current_preview_image = None
         self.is_dark_mode = self.detect_system_dark_mode()
+        self.view_filter = "all"
+        self.delete_all_var = tk.BooleanVar(value=False)
+        self.show_original_var = tk.BooleanVar(value=False)
+        self.show_duplicate_var = tk.BooleanVar(value=False)
 
         self.setup_styles()
         self.create_widgets()
@@ -156,6 +160,7 @@ class DuplicateApp:
         self.tree.bind("<Button-1>", self.on_tree_click)
         self.tree.bind("<Double-1>", self.open_selected_file)
         self.tree.bind("<Button-3>", self.show_context_menu)
+        self.tree.bind("<Motion>", self.update_tree_cursor)
 
         tree_scroll = ttk.Scrollbar(left_frame, orient=tk.VERTICAL, command=self.tree.yview)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
@@ -178,9 +183,29 @@ class DuplicateApp:
 
         bottom_frame = ttk.Frame(self.root, padding=10)
         bottom_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        options_frame = ttk.Frame(self.root, padding=(10, 0, 10, 5))
+        options_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        ttk.Checkbutton(
+            options_frame,
+            text="Delete all duplicates",
+            variable=self.delete_all_var,
+            command=self.toggle_select_all_duplicates,
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(
+            options_frame,
+            text="Show all original",
+            variable=self.show_original_var,
+            command=lambda: self.set_view_filter("original"),
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(
+            options_frame,
+            text="Show all duplicates",
+            variable=self.show_duplicate_var,
+            command=lambda: self.set_view_filter("duplicate"),
+        ).pack(side=tk.LEFT, padx=5)
         self.delete_btn = ttk.Button(
             bottom_frame,
-            text="Delete Checked Duplicates",
+            text="Delete All Selected",
             command=self.delete_checked_duplicates,
             state=tk.DISABLED,
             cursor="hand2",
@@ -227,25 +252,29 @@ class DuplicateApp:
 
     def populate_tree(self) -> None:
         for group_name, group in self.duplicate_data.items():
+            visible_files = []
+            if self.view_filter in ("all", "original"):
+                visible_files.append((group.original, "original"))
+            if self.view_filter in ("all", "duplicate"):
+                visible_files.extend(
+                    (duplicate, "duplicate") for duplicate in group.duplicates
+                )
+            if not visible_files:
+                continue
+
             group_text = (
                 f"{group_name} | Ext: {group.extension} | "
                 f"Size: {group.size:,} bytes | Dims: {group.dimensions or 'N/A'}"
             )
             parent_node = self.tree.insert("", tk.END, text=group_text, open=True)
-            self.tree.insert(
-                parent_node,
-                tk.END,
-                text=f"[KEEP ORIGINAL] {group.original.name}",
-                values=(self.checkbox_text(group.original), str(group.original), "original"),
-                tags=("original",),
-            )
-            for duplicate in group.duplicates:
+            for path, file_type in visible_files:
+                label = "[KEEP ORIGINAL]" if file_type == "original" else "[DUPLICATE]"
                 self.tree.insert(
                     parent_node,
                     tk.END,
-                    text=f"[DUPLICATE] {duplicate.name}",
-                    values=(self.checkbox_text(duplicate), str(duplicate), "duplicate"),
-                    tags=("duplicate",),
+                    text=f"{label} {path.name}",
+                    values=(self.checkbox_text(path), str(path), file_type),
+                    tags=(file_type,),
                 )
 
     def clear_tree(self) -> None:
@@ -261,6 +290,15 @@ class DuplicateApp:
             self.toggle_checked(item)
             return "break"
         return None
+
+    def update_tree_cursor(self, event) -> None:
+        item = self.tree.identify_row(event.y)
+        is_file_name = (
+            bool(item)
+            and bool(self.tree.item(item, "values"))
+            and self.tree.identify_column(event.x) == "#0"
+        )
+        self.tree.configure(cursor="hand2" if is_file_name else "")
 
     def toggle_checked(self, item: str) -> None:
         values = self.tree.item(item, "values")
@@ -349,6 +387,29 @@ class DuplicateApp:
         ):
             self.delete_paths(duplicate_paths)
 
+    def toggle_select_all_duplicates(self) -> None:
+        duplicate_paths = {
+            duplicate
+            for group in self.duplicate_data.values()
+            for duplicate in group.duplicates
+        }
+        if self.delete_all_var.get():
+            self.checked_paths.update(duplicate_paths)
+        else:
+            self.checked_paths.difference_update(duplicate_paths)
+        self.refresh_tree()
+
+    def set_view_filter(self, filter_name: str) -> None:
+        if filter_name == "original" and self.show_original_var.get():
+            self.show_duplicate_var.set(False)
+            self.view_filter = "original"
+        elif filter_name == "duplicate" and self.show_duplicate_var.get():
+            self.show_original_var.set(False)
+            self.view_filter = "duplicate"
+        else:
+            self.view_filter = "all"
+        self.refresh_tree()
+
     def delete_all_duplicates(self) -> None:
         duplicate_paths = [
             duplicate
@@ -377,6 +438,7 @@ class DuplicateApp:
         for path in deleted_paths:
             self.remove_file_from_data(path)
             self.checked_paths.discard(path)
+        self.delete_all_var.set(False)
         self.refresh_tree()
         self.details_label.config(text="Select a file to view details.")
         self.reset_preview()
@@ -424,7 +486,7 @@ class DuplicateApp:
     def open_selected_file(self, event) -> None:
         item = self.tree.identify_row(event.y)
         values = self.tree.item(item, "values") if item else ()
-        if values:
+        if values and self.tree.identify_column(event.x) == "#0":
             self.open_path(Path(values[1]))
 
     def open_path(self, path: Path) -> None:

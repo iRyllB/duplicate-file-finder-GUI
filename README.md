@@ -77,7 +77,7 @@ modules used by `gui_duplicator.py`.
 3. Review the duplicate groups in the left panel.
 4. Select one or more files to view their details and image preview.
 5. Click the checkbox in the **Delete** column for each duplicate you want to remove.
-6. Click **Delete Checked Duplicates** and confirm the deletion.
+6. Click **Delete All Selected** and confirm the deletion.
 
 The first file in each duplicate group is marked **[KEEP ORIGINAL]**. Review
 each group before removing a file.
@@ -85,6 +85,13 @@ each group before removing a file.
 Use **Delete All Duplicates** to send every file marked **[DUPLICATE]** to the
 Windows Recycle Bin after one confirmation. Original files are never included
 in this action.
+
+The **Delete all duplicates** checkbox selects or clears every duplicate in the
+delete column without deleting immediately. Use **Delete All Selected** to
+confirm and move the checked files to the Recycle Bin.
+
+Use **Show all original** to hide duplicate rows, or **Show all duplicates** to
+hide original rows. These filters only change what is displayed.
 
 Double-click a file to open it. Right-click a file for these options:
 
