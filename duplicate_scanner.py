@@ -1,4 +1,5 @@
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -21,6 +22,22 @@ class DuplicateGroup:
 
 class DuplicateScanner:
     """Find files with matching extension, size, dimensions, and content."""
+
+    _COPY_NAME_PATTERN = re.compile(
+        r"(?:\bcopy\b|(?:^|[\s_-])\(\d+\)$)", re.IGNORECASE
+    )
+
+    @classmethod
+    def _select_original(cls, paths: List[Path]) -> Tuple[Path, List[Path]]:
+        """Prefer a filename that does not look like an automatically created copy."""
+        ordered_paths = sorted(
+            paths,
+            key=lambda path: (
+                bool(cls._COPY_NAME_PATTERN.search(path.stem)),
+                path.name.casefold(),
+            ),
+        )
+        return ordered_paths[0], ordered_paths[1:]
 
     @staticmethod
     def get_file_hash(filepath: Path, chunk_size: int = 65536) -> Optional[str]:
@@ -75,12 +92,13 @@ class DuplicateScanner:
             for identical_paths in hash_groups.values():
                 if len(identical_paths) < 2:
                     continue
+                original, duplicate_paths = self._select_original(identical_paths)
                 duplicates[f"Group {group_id}"] = DuplicateGroup(
                     extension=extension or "None",
                     size=size,
                     dimensions=dimensions,
-                    original=identical_paths[0],
-                    duplicates=identical_paths[1:],
+                    original=original,
+                    duplicates=duplicate_paths,
                 )
                 group_id += 1
 

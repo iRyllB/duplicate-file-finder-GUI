@@ -83,6 +83,14 @@ modules used by `gui_duplicator.py`.
 The first file in each duplicate group is marked **[KEEP ORIGINAL]**. Review
 each group before removing a file.
 
+Use **Delete All Duplicates** to send every file marked **[DUPLICATE]** to the
+Windows Recycle Bin after one confirmation. Original files are never included
+in this action.
+
+The application detects your Windows app theme when it starts. Use
+**Switch to Dark Mode** or **Switch to Light Mode** to change the theme while
+the application is running.
+
 ## Project structure
 
 ```text
