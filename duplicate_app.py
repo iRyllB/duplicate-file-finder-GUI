@@ -27,6 +27,7 @@ class DuplicateApp:
         self.checked_paths: set[Path] = set()
         self.current_preview_image = None
         self.is_dark_mode = self.detect_system_dark_mode()
+        self.theme_colors = {}
         self.view_filter = "all"
         self.delete_all_var = tk.BooleanVar(value=False)
         self.show_original_var = tk.BooleanVar(value=False)
@@ -60,8 +61,11 @@ class DuplicateApp:
                 "background": "#202124",
                 "foreground": "#f1f3f4",
                 "field": "#303134",
-                "selected": "#3c5a78",
+                "selected": "#394b5f",
                 "canvas": "#303134",
+                "active": "#465d75",
+                "disabled": "#7f8790",
+                "muted": "#b8c0c8",
             }
         else:
             colors = {
@@ -70,24 +74,59 @@ class DuplicateApp:
                 "field": "#ffffff",
                 "selected": "#cfe2f3",
                 "canvas": "#f0f0f0",
+                "active": "#dbeafe",
+                "disabled": "#888888",
+                "muted": "#666666",
             }
 
+        self.theme_colors = colors
         self.root.configure(bg=colors["background"])
         self.preview_canvas.configure(bg=colors["canvas"])
         self.style.configure(
             ".", background=colors["background"], foreground=colors["foreground"]
         )
         self.style.configure(
+            "TFrame",
+            background=colors["background"],
+        )
+        self.style.configure(
+            "TLabel",
+            background=colors["background"],
+            foreground=colors["foreground"],
+        )
+        self.style.configure(
+            "TLabelframe",
+            background=colors["background"],
+            foreground=colors["foreground"],
+        )
+        self.style.configure(
+            "TLabelframe.Label",
+            background=colors["background"],
+            foreground=colors["foreground"],
+        )
+        self.style.configure(
             "TEntry",
             fieldbackground=colors["field"],
             foreground=colors["foreground"],
             insertcolor=colors["foreground"],
+            selectbackground=colors["selected"],
+            selectforeground=colors["foreground"],
+        )
+        self.style.map(
+            "TEntry",
+            fieldbackground=[
+                ("disabled", colors["background"]),
+                ("readonly", colors["field"]),
+            ],
+            foreground=[("disabled", colors["disabled"])],
         )
         self.style.configure(
             "Treeview",
             background=colors["field"],
             fieldbackground=colors["field"],
             foreground=colors["foreground"],
+            selectbackground=colors["selected"],
+            selectforeground=colors["foreground"],
         )
         self.style.map(
             "Treeview",
@@ -101,8 +140,42 @@ class DuplicateApp:
         )
         self.style.map(
             "TButton",
-            background=[("active", colors["selected"])],
-            foreground=[("active", colors["foreground"])],
+            background=[
+                ("disabled", colors["background"]),
+                ("pressed", colors["selected"]),
+                ("active", colors["active"]),
+            ],
+            foreground=[
+                ("disabled", colors["disabled"]),
+                ("pressed", colors["foreground"]),
+                ("active", colors["foreground"]),
+            ],
+        )
+        self.style.configure(
+            "TCheckbutton",
+            background=colors["background"],
+            foreground=colors["foreground"],
+        )
+        self.style.map(
+            "TCheckbutton",
+            background=[
+                ("disabled", colors["background"]),
+                ("active", colors["active"]),
+            ],
+            foreground=[
+                ("disabled", colors["disabled"]),
+                ("active", colors["foreground"]),
+            ],
+        )
+        self.style.configure(
+            "TScrollbar",
+            background=colors["field"],
+            troughcolor=colors["background"],
+            arrowcolor=colors["foreground"],
+        )
+        self.style.configure(
+            "TPanedwindow",
+            background=colors["background"],
         )
         self.tree.tag_configure("original", foreground=colors["foreground"])
         self.tree.tag_configure(
@@ -129,6 +202,12 @@ class DuplicateApp:
             top_frame,
             text="Scan for Duplicates",
             command=self.run_scan,
+            cursor="hand2",
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            top_frame,
+            text="Recheck Folder",
+            command=self.recheck_folder,
             cursor="hand2",
         ).pack(side=tk.LEFT, padx=5)
         self.theme_btn = ttk.Button(
@@ -231,6 +310,12 @@ class DuplicateApp:
             self.path_entry.insert(0, folder)
 
     def run_scan(self) -> None:
+        self.scan_folder("Scan Complete")
+
+    def recheck_folder(self) -> None:
+        self.scan_folder("Recheck Complete")
+
+    def scan_folder(self, result_title: str) -> None:
         target_dir = self.path_entry.get().strip()
         if not target_dir or not Path(target_dir).is_dir():
             messagebox.showerror("Error", "Please select a valid directory first.")
@@ -247,7 +332,7 @@ class DuplicateApp:
         self.populate_tree()
         self.update_delete_buttons()
         messagebox.showinfo(
-            "Scan Complete", f"Found {len(self.duplicate_data)} duplicate groups!"
+            result_title, f"Found {len(self.duplicate_data)} duplicate groups!"
         )
 
     def populate_tree(self) -> None:
@@ -341,7 +426,10 @@ class DuplicateApp:
         self.preview_canvas.delete("all")
         if path_obj.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"}:
             self.preview_canvas.create_text(
-                160, 160, text="Preview available for images only", fill="#888888"
+                160,
+                160,
+                text="Preview available for images only",
+                fill=self.theme_colors["muted"],
             )
             return
         try:
@@ -513,6 +601,12 @@ class DuplicateApp:
         self.tree.selection_set(item)
         file_path = Path(values[1])
         menu = tk.Menu(self.root, tearoff=False)
+        menu.configure(
+            background=self.theme_colors["field"],
+            foreground=self.theme_colors["foreground"],
+            activebackground=self.theme_colors["active"],
+            activeforeground=self.theme_colors["foreground"],
+        )
         menu.add_command(label="Open File", command=lambda: self.open_path(file_path))
         menu.add_command(
             label="Open Folder Containing File",
@@ -551,5 +645,8 @@ class DuplicateApp:
     def reset_preview(self) -> None:
         self.preview_canvas.delete("all")
         self.preview_canvas.create_text(
-            160, 160, text="No Preview Available", fill="#888888"
+            160,
+            160,
+            text="No Preview Available",
+            fill=self.theme_colors.get("muted", "#888888"),
         )
