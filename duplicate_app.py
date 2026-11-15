@@ -382,6 +382,7 @@ class DuplicateApp:
             bool(item)
             and bool(self.tree.item(item, "values"))
             and self.tree.identify_column(event.x) == "#0"
+            and self.tree.identify_element(event.x, event.y) == "text"
         )
         self.tree.configure(cursor="hand2" if is_file_name else "")
 
@@ -574,7 +575,11 @@ class DuplicateApp:
     def open_selected_file(self, event) -> None:
         item = self.tree.identify_row(event.y)
         values = self.tree.item(item, "values") if item else ()
-        if values and self.tree.identify_column(event.x) == "#0":
+        if (
+            values
+            and self.tree.identify_column(event.x) == "#0"
+            and self.tree.identify_element(event.x, event.y) == "text"
+        ):
             self.open_path(Path(values[1]))
 
     def open_path(self, path: Path) -> None:
