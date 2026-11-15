@@ -95,11 +95,22 @@ confirm and move the checked files to the Recycle Bin.
 Use **Show all original** to hide duplicate rows, or **Show all duplicates** to
 hide original rows. These filters only change what is displayed.
 
-Double-click a file to open it. Right-click a file for these options:
+### Opening files and viewing options
+
+You do not need to use the command line to open a file. Find the file name in
+the list and double-click directly on the name. Text files open in your
+computer's usual text editor, while images and other file types open in their
+usual associated application.
+
+You can also right-click directly on a file name to view more options:
 
 - **Open File**
 - **Open Folder Containing File**
 - **Mark as duplicate** or **Unmark as duplicate**
+
+If you right-click a file name, choose **Open File** to open it, or choose
+**Open Folder Containing File** to see where it is saved. The menu also lets
+you change whether the file is treated as a duplicate.
 
 Files marked as duplicates are shown in a different color. Marking a file as a
 duplicate makes it eligible for the delete checkboxes; unmarking it makes it
